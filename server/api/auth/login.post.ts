@@ -74,16 +74,16 @@ export default defineEventHandler(async (event) => {
 
   await dbExecute('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id])
 
-  const config = useRuntimeConfig(event)
+  const jwtSecret = getJwtSecretRuntime(event)
   const token = signAdminToken(
     {
       sub: user.id,
       username: user.username,
       full_name: user.full_name,
       role: user.role,
-      pwd_sig: computePasswordFingerprint(user.password_hash, config.adminJwtSecret)
+      pwd_sig: computePasswordFingerprint(user.password_hash, jwtSecret)
     },
-    config.adminJwtSecret,
+    jwtSecret,
     SESSION_TTL_SEC
   )
 

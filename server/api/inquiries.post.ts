@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { createError, getHeader, readBody, readMultipartFormData, setHeader } from 'h3'
+import { getJwtSecretRuntime } from '../utils/auth'
 import { dbExecute, dbQueryOne } from '../utils/db'
 import { saveUploadedBuffer } from '../utils/media'
 import {
@@ -143,7 +144,7 @@ export default defineEventHandler(async (event) => {
     const okChallenge = verifyMathChallenge(
       String(fields.challenge_token || ''),
       String(fields.challenge_answer || ''),
-      config.adminJwtSecret
+      getJwtSecretRuntime(event)
     )
     if (!okChallenge) {
       throw createError({

@@ -1,10 +1,10 @@
-import { requireAdmin } from '../../../utils/auth'
+import { getJwtSecretRuntime, requireAdmin } from '../../../utils/auth'
 import { dbQuery, dbQueryOne } from '../../../utils/db'
 import { isRequestHttps } from '../../../utils/security'
 
 export default defineEventHandler(async (event) => {
   const admin = requireAdmin(event)
-  const config = useRuntimeConfig(event)
+  const jwtSecret = getJwtSecretRuntime(event)
 
   const logs = await dbQuery<Record<string, any>>(
     'SELECT * FROM security_logs ORDER BY id DESC LIMIT 100'
@@ -27,7 +27,9 @@ export default defineEventHandler(async (event) => {
     )
   ])
 
-  const customJwtSecret = config.adminJwtSecret !== 'csf-enterprise-secret-2026'
+  const customJwtSecret =
+    jwtSecret !== 'csf-enterprise-secret-2026' &&
+    jwtSecret !== 'change-this-to-a-64-char-random-secret-in-production'
 
   const checks = [
     {

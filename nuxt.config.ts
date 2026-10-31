@@ -38,11 +38,11 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     adminJwtSecret: process.env.ADMIN_JWT_SECRET || 'csf-enterprise-secret-2026',
-    dbHost: process.env.DB_HOST || '',
-    dbPort: Number(process.env.DB_PORT || 3306),
-    dbUser: process.env.DB_USER || 'csf_user',
-    dbPassword: process.env.DB_PASSWORD || 'csf_password_2026',
-    dbName: process.env.DB_NAME || 'csf_db',
+    dbHost: process.env.DB_HOST || 'localhost',
+    dbPort: Number(process.env.DB_PORT || 3360),
+    dbUser: process.env.DB_USER || 'pacific_csfnuxt',
+    dbPassword: process.env.DB_PASSWORD || '',
+    dbName: process.env.DB_NAME || 'pacific_csfnuxt',
     adminDefaultUser: process.env.ADMIN_DEFAULT_USER || 'admin',
     adminDefaultPass: process.env.ADMIN_DEFAULT_PASS || 'csf@2026',
     public: {

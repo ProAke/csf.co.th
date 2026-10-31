@@ -1,16 +1,11 @@
 -- =============================================================================
 -- CSF Technology Touch (csf.co.th) — MariaDB 10.6+ / 11.x Relational Schema
+-- Target Database: `pacific_csfnuxt` (Import directly via phpMyAdmin, CLI, or auto-init)
 -- Charset: utf8mb4 / Collation: utf8mb4_unicode_ci
 -- =============================================================================
 
 SET NAMES utf8mb4;
 SET time_zone = '+07:00';
-
-CREATE DATABASE IF NOT EXISTS `csf_db`
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
-USE `csf_db`;
 
 -- 1. Admin & Backoffice Users
 CREATE TABLE IF NOT EXISTS `users` (

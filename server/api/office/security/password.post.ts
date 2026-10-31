@@ -2,6 +2,7 @@ import { createError, readBody, setCookie } from 'h3'
 import {
   ADMIN_COOKIE_NAME,
   computePasswordFingerprint,
+  getJwtSecretRuntime,
   hashPassword,
   requireAdmin,
   signAdminToken,
@@ -63,15 +64,16 @@ export default defineEventHandler(async (event) => {
   await dbExecute('UPDATE users SET password_hash = ? WHERE id = ?', [newHash, user.id])
 
   // Rotate session cookie with updated password fingerprint (invalidates any stolen/other tokens!)
+  const secret = getJwtSecretRuntime(event)
   const newToken = signAdminToken(
     {
       sub: user.id,
       username: user.username,
       full_name: user.full_name,
       role: user.role,
-      pwd_sig: computePasswordFingerprint(newHash, config.adminJwtSecret)
+      pwd_sig: computePasswordFingerprint(newHash, secret)
     },
-    config.adminJwtSecret,
+    secret,
     SESSION_TTL_SEC
   )
 
