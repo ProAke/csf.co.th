@@ -1,8 +1,15 @@
 import crypto from 'node:crypto'
 import type { H3Event } from 'h3'
 import { createError, getCookie } from 'h3'
+import { loadDotEnvRuntime } from './env'
 
 export const ADMIN_COOKIE_NAME = 'csf_office_session'
+
+export function getJwtSecretRuntime(event?: H3Event): string {
+  loadDotEnvRuntime()
+  const config = event ? useRuntimeConfig(event) : useRuntimeConfig()
+  return process.env.ADMIN_JWT_SECRET || config.adminJwtSecret || 'csf-enterprise-secret-2026'
+}
 
 const PBKDF2_ITERATIONS = 100000
 const DUMMY_SALT = '0123456789abcdef0123456789abcdef'
@@ -74,16 +81,16 @@ export function verifyAdminToken(token: string, secret: string): AdminTokenPaylo
 }
 
 export function getAdminFromEvent(event: H3Event): AdminTokenPayload | null {
-  const config = useRuntimeConfig(event)
+  const secret = getJwtSecretRuntime(event)
   const authHeader = event.node.req.headers['authorization']
   if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
     const bearer = authHeader.slice(7).trim()
-    const verified = verifyAdminToken(bearer, config.adminJwtSecret)
+    const verified = verifyAdminToken(bearer, secret)
     if (verified) return verified
   }
   const token = getCookie(event, ADMIN_COOKIE_NAME)
   if (!token) return null
-  return verifyAdminToken(token, config.adminJwtSecret)
+  return verifyAdminToken(token, secret)
 }
 
 export function requireAdmin(event: H3Event): AdminTokenPayload {

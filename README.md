@@ -31,15 +31,24 @@
 
 ---
 
-## การติดตั้งและรันด้วย MariaDB (Docker Compose — แนะนำสำหรับ Production)
+## การติดตั้งขึ้นเซิร์ฟเวอร์จริง / UAT (`uat.csf.co.th` & `www.csf.co.th` + MariaDB `pacific_csfnuxt`)
 
+1. **สร้างไฟล์ `.env` ที่โฟลเดอร์รากของโปรเจกต์บนเซิร์ฟเวอร์** *(ไฟล์ `.env` ถูกตั้งค่า `.gitignore` ไว้เพื่อไม่ให้รหัสผ่านฐานข้อมูลหลุดขึ้น GitHub)*:
 ```bash
 cp .env.example .env
-docker compose up -d --build
+# แก้ไขค่า DB_PASSWORD ในไฟล์ .env โดยใส่เครื่องหมาย Single Quote '...' ครอบรหัสผ่านเพื่อรองรับอักขระพิเศษ (^ และ !)
 ```
-- เว็บไซต์หลัก: `http://localhost:3000`
-- ระบบหลังบ้าน (Admin CMS): `http://localhost:3000/office` (ค่าเริ่มต้น: `admin` / `csf@2026`)
-- phpMyAdmin (จัดการ MariaDB): `http://localhost:8080`
+
+2. **ติดตั้งแพ็กเกจ, เตรียมฐานข้อมูล MariaDB (`pacific_csfnuxt`), Build และรันด้วย PM2**:
+```bash
+npm install
+npm run db:init      # สร้างตาราง 10 ตาราง และนำเข้าข้อมูลเริ่มต้นลงฐานข้อมูล pacific_csfnuxt อัตโนมัติ
+npm run media:sync   # (ทางเลือก) ตรวจสอบ/ซิงก์ไฟล์มีเดียให้ครบในเครื่อง 100%
+npm run build
+pm2 start ecosystem.config.cjs
+pm2 save
+```
+*(หมายเหตุ: สามารถ Import ไฟล์ `database/seed.sql` เข้าสู่ฐานข้อมูล `pacific_csfnuxt` ผ่าน phpMyAdmin ได้โดยตรงเช่นกัน เพราะตัดคำสั่ง `CREATE DATABASE` ออกแล้ว รองรับสิทธิ์ User ของ Hosting ทุกประเภท)*
 
 ## การรันในโหมดพัฒนา (Local Development)
 

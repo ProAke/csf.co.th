@@ -3,6 +3,7 @@ import path from 'node:path'
 import mysql from 'mysql2/promise'
 import { DatabaseSync } from 'node:sqlite'
 import { hashPassword } from './auth'
+import { getMariaDbRuntimeParams } from './env'
 import {
   SEED_ARTICLES,
   SEED_BANNERS,
@@ -193,57 +194,83 @@ async function initDatabaseInternal(): Promise<void> {
   if (state.initialized) return
 
   const config = useRuntimeConfig()
-  const dbHost = (config.dbHost || process.env.DB_HOST || '').trim()
-  const dbPort = Number(config.dbPort || process.env.DB_PORT || 3306)
-  const dbUser = (config.dbUser || process.env.DB_USER || 'csf_user').trim()
-  const dbPassword = config.dbPassword || process.env.DB_PASSWORD || 'csf_password_2026'
-  const dbName = (config.dbName || process.env.DB_NAME || 'csf_db').trim()
+  const {
+    host: dbHost,
+    port: dbPort,
+    user: dbUser,
+    password: dbPassword,
+    database: dbName
+  } = getMariaDbRuntimeParams(config as any)
 
-  if (dbHost) {
-    try {
-      const pool = mysql.createPool({
-        host: dbHost,
-        port: dbPort,
-        user: dbUser,
-        password: dbPassword,
-        database: dbName,
-        waitForConnections: true,
-        connectionLimit: 10,
-        charset: 'utf8mb4',
-        connectTimeout: 2500
-      })
-      const conn = await pool.getConnection()
-      await conn.ping()
-      conn.release()
+  if (dbHost && dbUser && dbName) {
+    // Build smart candidate endpoints (handles IPv4/IPv6 localhost & custom port 3360 / standard 3306)
+    const candidates: Array<{ host: string; port: number }> = [{ host: dbHost, port: dbPort }]
+    if (dbHost.toLowerCase() === 'localhost') {
+      candidates.push({ host: '127.0.0.1', port: dbPort })
+    }
+    const isLoopback = dbHost.toLowerCase() === 'localhost' || dbHost === '127.0.0.1'
+    if (isLoopback && dbPort === 3360) {
+      candidates.push({ host: '127.0.0.1', port: 3306 })
+    }
 
-      // Ensure MariaDB tables exist
-      const schemaPath = path.resolve(process.cwd(), 'database/schema.sql')
-      if (fs.existsSync(schemaPath)) {
-        const rawSql = fs.readFileSync(schemaPath, 'utf8')
-        const statements = rawSql
-          .split(/;\s*\n/)
-          .map(s => s.trim())
-          .filter(s => s && !s.startsWith('--') && !/^CREATE DATABASE/i.test(s) && !/^USE /i.test(s))
-        for (const stmt of statements) {
-          await pool.query(stmt)
+    let lastErr: any = null
+    for (const ep of candidates) {
+      let pool: mysql.Pool | null = null
+      try {
+        pool = mysql.createPool({
+          host: ep.host,
+          port: ep.port,
+          user: dbUser,
+          password: dbPassword,
+          database: dbName,
+          waitForConnections: true,
+          connectionLimit: 10,
+          charset: 'utf8mb4',
+          connectTimeout: 2500
+        })
+        const conn = await pool.getConnection()
+        await conn.ping()
+        conn.release()
+
+        // Ensure MariaDB tables exist inside target database (e.g. pacific_csfnuxt)
+        const schemaPath = path.resolve(process.cwd(), 'database/schema.sql')
+        if (fs.existsSync(schemaPath)) {
+          const rawSql = fs.readFileSync(schemaPath, 'utf8')
+          const statements = rawSql
+            .split(/;\s*\n/)
+            .map(s => s.trim())
+            .filter(s => s && !s.startsWith('--') && !/^CREATE DATABASE/i.test(s) && !/^USE /i.test(s))
+          for (const stmt of statements) {
+            await pool.query(stmt)
+          }
+        }
+
+        try {
+          await pool.query('ALTER TABLE inquiries ADD COLUMN attachments_json LONGTEXT NULL')
+        } catch {
+          // Column already exists
+        }
+
+        state.engine = 'mariadb'
+        state.mariadbPool = pool
+        state.hostInfo = `${ep.host}:${ep.port}/${dbName} (user: ${dbUser})`
+        state.connectionNote = `เชื่อมต่อฐานข้อมูล MariaDB สำเร็จ (${ep.host}:${ep.port}/${dbName})`
+        state.initialized = true
+        await seedIfEmpty()
+        return
+      } catch (err: any) {
+        lastErr = err
+        if (pool) {
+          await pool.end().catch(() => {})
+        }
+        // Only continue trying fallback loopback candidates on ECONNREFUSED; stop immediately on auth errors
+        if (err?.code && err.code !== 'ECONNREFUSED') {
+          break
         }
       }
-
-      state.engine = 'mariadb'
-      state.mariadbPool = pool
-      state.hostInfo = `${dbHost}:${dbPort}/${dbName}`
-      state.connectionNote = `เชื่อมต่อ MariaDB สำเร็จ (${dbHost}:${dbPort}/${dbName})`
-      state.initialized = true
-      try {
-        await pool.query('ALTER TABLE inquiries ADD COLUMN attachments_json LONGTEXT NULL')
-      } catch {
-        // Column already exists
-      }
-      await seedIfEmpty()
-      return
-    } catch (err: any) {
-      state.connectionNote = `ไม่พบเซิร์ฟเวอร์ MariaDB ที่ ${dbHost}:${dbPort} (${err?.code || err?.message || 'offline'}) — ระบบสลับใช้ SQL Compatibility Preview Store อัตโนมัติ (พร้อมส่งออก .sql สำหรับ MariaDB ได้ทุกเมื่อ)`
     }
+
+    state.connectionNote = `ตั้งค่าฐานข้อมูล MariaDB ไว้ที่ ${dbHost}:${dbPort}/${dbName} (user: ${dbUser}) — ไม่พบเซิร์ฟเวอร์ในสภาพแวดล้อม Preview ปัจจุบัน (${lastErr?.code || lastErr?.message || 'offline'}) ระบบจึงสลับใช้ SQL Compatibility Preview Store อัตโนมัติ และจะเชื่อมต่อ MariaDB ทันทีเมื่อรันบนเซิร์ฟเวอร์จริง`
   } else {
     state.connectionNote =
       'โหมด Sandbox Preview (SQLite Relational Engine ใช้งานร่วมกับ Schema เดียวกับ MariaDB 100% — ตั้งค่า DB_HOST เพื่อเชื่อมต่อ MariaDB Server ได้ทันที)'
@@ -283,13 +310,14 @@ export async function ensureDb(): Promise<void> {
 
 export async function dbQuery<T = Record<string, any>>(sql: string, params: any[] = []): Promise<T[]> {
   await ensureDb()
+  const safeParams = params.map(p => (p === undefined ? null : p))
   if (state.engine === 'mariadb' && state.mariadbPool) {
-    const [rows] = await state.mariadbPool.execute(sql, params)
+    const [rows] = await state.mariadbPool.execute(sql, safeParams)
     return rows as T[]
   }
   if (!state.sqliteDb) throw new Error('Database not initialized')
   const stmt = state.sqliteDb.prepare(sql)
-  return stmt.all(...params) as T[]
+  return stmt.all(...safeParams) as T[]
 }
 
 export async function dbQueryOne<T = Record<string, any>>(sql: string, params: any[] = []): Promise<T | null> {
@@ -299,8 +327,9 @@ export async function dbQueryOne<T = Record<string, any>>(sql: string, params: a
 
 export async function dbExecute(sql: string, params: any[] = []): Promise<{ insertId: number; affectedRows: number }> {
   await ensureDb()
+  const safeParams = params.map(p => (p === undefined ? null : p))
   if (state.engine === 'mariadb' && state.mariadbPool) {
-    const [res] = await state.mariadbPool.execute(sql, params)
+    const [res] = await state.mariadbPool.execute(sql, safeParams)
     const header = res as mysql.ResultSetHeader
     return {
       insertId: Number(header.insertId || 0),
@@ -309,7 +338,7 @@ export async function dbExecute(sql: string, params: any[] = []): Promise<{ inse
   }
   if (!state.sqliteDb) throw new Error('Database not initialized')
   const stmt = state.sqliteDb.prepare(sql)
-  const res = stmt.run(...params)
+  const res = stmt.run(...safeParams)
   return {
     insertId: Number(res.lastInsertRowid || 0),
     affectedRows: Number(res.changes || 0)
@@ -583,9 +612,10 @@ export async function exportMariaDbSqlDump(): Promise<string> {
   await ensureDb()
   const schemaPath = path.resolve(process.cwd(), 'database/schema.sql')
   const schemaHeader = fs.existsSync(schemaPath) ? fs.readFileSync(schemaPath, 'utf8') : ''
-  const tables = ['categories', 'banners', 'products', 'articles', 'site_settings', 'social_integrations', 'inquiries']
+  const tables = ['users', 'categories', 'banners', 'products', 'articles', 'site_settings', 'social_integrations', 'inquiries']
   const chunks: string[] = [
     `-- CSF Technology Touch (csf.co.th) Live MariaDB SQL Export`,
+    `-- Target Database: pacific_csfnuxt (Import directly without CREATE DATABASE privilege)`,
     `-- Generated at: ${new Date().toISOString()}`,
     schemaHeader,
     `\nSET FOREIGN_KEY_CHECKS = 0;\n`
@@ -595,11 +625,14 @@ export async function exportMariaDbSqlDump(): Promise<string> {
     const rows = await dbQuery<Record<string, any>>(`SELECT * FROM ${tbl}`)
     if (!rows.length) continue
     chunks.push(`-- Data for table \`${tbl}\``)
-    chunks.push(`DELETE FROM \`${tbl}\`;`)
+    if (tbl !== 'users') {
+      chunks.push(`DELETE FROM \`${tbl}\`;`)
+    }
     for (const row of rows) {
       const cols = Object.keys(row).map(c => `\`${c}\``).join(', ')
       const vals = Object.values(row).map(escapeSqlValue).join(', ')
-      chunks.push(`INSERT INTO \`${tbl}\` (${cols}) VALUES (${vals});`)
+      const verb = tbl === 'users' ? 'INSERT IGNORE INTO' : 'INSERT INTO'
+      chunks.push(`${verb} \`${tbl}\` (${cols}) VALUES (${vals});`)
     }
     chunks.push('')
   }

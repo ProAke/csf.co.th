@@ -5,13 +5,13 @@ services:
     restart: unless-stopped
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
-      MARIADB_ROOT_PASSWORD: root_password_2026
-      MARIADB_DATABASE: csf_db
-      MARIADB_USER: csf_user
-      MARIADB_PASSWORD: csf_password_2026
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-change_root_password}
+      MARIADB_DATABASE: ${DB_NAME:-pacific_csfnuxt}
+      MARIADB_USER: ${DB_USER:-pacific_csfnuxt}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-change_db_password}
       TZ: Asia/Bangkok
     ports:
-      - "3306:3306"
+      - "${DB_PORT:-3360}:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
@@ -22,36 +22,21 @@ services:
       timeout: 5s
       retries: 5
 
-  phpmyadmin:
-    image: phpmyadmin:latest
-    container_name: csf-phpmyadmin
-    restart: unless-stopped
-    depends_on:
-      mariadb:
-        condition: service_healthy
-    environment:
-      PMA_HOST: mariadb
-      PMA_PORT: 3306
-    ports:
-      - "8080:80"
-
   web:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: csf-nuxt-web
     restart: unless-stopped
-    depends_on:
-      mariadb:
-        condition: service_healthy
+    env_file:
+      - .env
     environment:
       NUXT_PUBLIC_SITE_URL: ${NUXT_PUBLIC_SITE_URL:-https://uat.csf.co.th}
-      DB_HOST: mariadb
+      DB_HOST: ${DOCKER_DB_HOST:-mariadb}
       DB_PORT: 3306
-      DB_USER: csf_user
-      DB_PASSWORD: csf_password_2026
-      DB_NAME: csf_db
-      ADMIN_JWT_SECRET: csf-enterprise-secret-change-in-production-2026
+      DB_USER: ${DB_USER:-pacific_csfnuxt}
+      DB_PASSWORD: ${DB_PASSWORD:-change_db_password}
+      DB_NAME: ${DB_NAME:-pacific_csfnuxt}
       HOST: 0.0.0.0
       PORT: 3000
     volumes:

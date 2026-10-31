@@ -1,4 +1,4 @@
-import { computePasswordFingerprint, getAdminFromEvent } from '../../utils/auth'
+import { computePasswordFingerprint, getAdminFromEvent, getJwtSecretRuntime } from '../../utils/auth'
 import { dbQueryOne } from '../../utils/db'
 
 export default defineEventHandler(async (event) => {
@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
     return { authenticated: false, user: null }
   }
 
-  const config = useRuntimeConfig(event)
+  const secret = getJwtSecretRuntime(event)
   const dbUser = await dbQueryOne<{
     id: number
     username: string
@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (admin.pwd_sig) {
-    const currentSig = computePasswordFingerprint(dbUser.password_hash, config.adminJwtSecret)
+    const currentSig = computePasswordFingerprint(dbUser.password_hash, secret)
     if (admin.pwd_sig !== currentSig) {
       return { authenticated: false, user: null }
     }
