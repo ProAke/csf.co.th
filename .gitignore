@@ -1,0 +1,14 @@
+node_modules
+.nuxt
+.output
+dist
+.env
+.env.*
+!.env.example
+data/*.sqlite
+data/*.sqlite-*
+public/uploads/inquiries/*
+!public/uploads/inquiries/.gitkeep
+Unselected files
+*.log
+.DS_Store
